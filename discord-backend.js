@@ -5,9 +5,12 @@ const { Client, GatewayIntentBits } = require('discord.js');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Initialize Discord client with minimal intents
+// Initialize Discord client with necessary intents
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds]
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers
+  ]
 });
 
 // Middleware for JSON parsing and CORS
@@ -19,56 +22,96 @@ app.use((req, res, next) => {
   next();
 });
 
+// Calculate account age in human-readable format
+function calculateAccountAge(createdAt) {
+  const now = new Date();
+  const created = new Date(createdAt);
+  const diffMs = now - created;
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const years = Math.floor(diffDays / 365);
+  const months = Math.floor((diffDays % 365) / 30);
+  return years > 0 ? `${years} years, ${months} months` : `${months} months`;
+}
+
+// Calculate age in days
+function calculateAgeDays(createdAt) {
+  const now = new Date();
+  const created = new Date(createdAt);
+  const diffMs = now - created;
+  return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+}
+
 // Root endpoint for Render health check
 app.get('/', (req, res) => {
   res.status(200).json({ message: 'Discord Age Checker API is running' });
 });
 
-// Discord age checker endpoint
-app.get('/api/discord-age/:userId', async (req, res) => {
-  const { userId } = req.params;
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+});
 
-  // Validate userId (must be numeric and valid Snowflake)
-  if (!/^\d{17,19}$/.test(userId)) {
-    return res.status(400).json({ error: 'Invalid user ID format' });
+// Discord age checker endpoint
+app.get('/api/discord-age/:username', async (req, res) => {
+  const { username } = req.params;
+
+  if (!username) {
+    return res.status(400).json({ error: 'Username is required' });
   }
 
   try {
-    // Fetch user data from Discord API
-    const user = await client.users.fetch(userId).catch(() => null);
-
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+    // Try to find the user by searching guilds
+    let user = null;
+    for (const guild of client.guilds.cache.values()) {
+      const members = await guild.members.search({ query: username, limit: 1 }).catch(() => null);
+      if (members && members.size > 0) {
+        user = members.first().user;
+        break;
+      }
     }
 
-    // Calculate account age from Snowflake ID
-    const creationTimestamp = Math.floor(user.createdTimestamp / 1000);
-    const creationDate = new Date(user.createdTimestamp);
-    const now = new Date();
-    const ageInMs = now - creationDate;
-    const years = Math.floor(ageInMs / (1000 * 60 * 60 * 24 * 365.25));
-    const months = Math.floor((ageInMs % (1000 * 60 * 60 * 24 * 365.25)) / (1000 * 60 * 60 * 24 * 30));
-    const days = Math.floor((ageInMs % (1000 * 60 * 60 * 24 * 30)) / (1000 * 60 * 60 * 24));
+    if (!user) {
+      // Fallback: Try fetching by ID if username is numeric
+      if (/^\d{17,19}$/.test(username)) {
+        user = await client.users.fetch(username).catch(() => null);
+      }
+      if (!user) {
+        return res.status(404).json({ error: `User ${username} not found. Ensure the user is in a server the bot has access to or use a numeric user ID.` });
+      }
+    }
 
-    const ageString = `${years > 0 ? `${years} year${years !== 1 ? 's' : ''}` : ''}${years > 0 && (months > 0 || days > 0) ? ', ' : ''}${months > 0 ? `${months} month${months !== 1 ? 's' : ''}` : ''}${months > 0 && days > 0 ? ', ' : ''}${days > 0 ? `${days} day${days !== 1 ? 's' : ''}` : ''}`.trim() || 'Less than a day';
+    // Calculate account age
+    const creationDate = new Date(user.createdTimestamp);
+    const accountAge = calculateAccountAge(creationDate);
+    const ageDays = calculateAgeDays(creationDate);
 
     // Prepare response
     const response = {
-      userId: user.id,
       username: user.tag,
-      creationDate: creationDate.toISOString(),
-      creationTimestamp: creationTimestamp,
-      accountAge: ageString,
-      avatar: user.avatarURL({ size: 128 }) || null,
-      publicFlags: user.flags ? user.flags.toArray() : [],
-      premiumType: user.premiumType || 0,
-      locale: user.locale || 'Unknown'
+      user_id: user.id,
+      estimated_creation_date: creationDate.toLocaleDateString(),
+      account_age: accountAge,
+      age_days: ageDays,
+      avatar: user.avatarURL({ size: 128 }) || 'https://via.placeholder.com/50',
+      verified: user.bot ? 'Bot' : (user.verified ? 'Yes' : 'No'),
+      description: user.bio || 'N/A', // Note: Bio requires user profile access, may be null
+      estimation_confidence: 'High',
+      accuracy_range: 'Exact',
+      public_flags: user.flags ? user.flags.toArray() : [],
+      premium_type: user.premiumType || 0
     };
 
     res.status(200).json(response);
   } catch (error) {
-    console.error('Error fetching user:', error.message);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('Discord API Error:', {
+      status: error.status,
+      data: error.data,
+      message: error.message
+    });
+    res.status(500).json({
+      error: 'Failed to fetch Discord data',
+      details: error.message || 'No additional details'
+    });
   }
 });
 
