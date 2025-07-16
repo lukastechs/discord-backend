@@ -11,7 +11,6 @@ app.use(express.json());
 const cacheDir = path.join(__dirname, '../cache');
 const cacheDuration = 3600 * 1000; // 1 hour
 
-// Calculate account age
 function calculateAccountAge(createdAt) {
   const now = new Date();
   const created = new Date(createdAt);
@@ -23,7 +22,6 @@ function calculateAccountAge(createdAt) {
   return `${years} years, ${months} months, ${days} days`;
 }
 
-// Calculate age in days
 function calculateAgeDays(createdAt) {
   const now = new Date();
   const created = new Date(createdAt);
@@ -45,7 +43,6 @@ async function discordAgeChecker(req, res) {
     return res.status(400).json({ error: 'reCAPTCHA token is required' });
   }
 
-  // Verify reCAPTCHA
   try {
     const recaptchaResponse = await axios.post('https://www.google.com/recaptcha/api/siteverify', null, {
       params: {
@@ -64,7 +61,6 @@ async function discordAgeChecker(req, res) {
     return res.status(400).json({ error: 'reCAPTCHA verification failed' });
   }
 
-  // Check cache
   const cacheFile = path.join(cacheDir, `discord_${discord_id}.json`);
   try {
     await fs.mkdir(cacheDir, { recursive: true });
@@ -79,12 +75,10 @@ async function discordAgeChecker(req, res) {
     console.error('Cache error:', error.message);
   }
 
-  // Calculate creation date from Snowflake ID
-  const discordEpoch = 1420070400000; // January 1, 2015
+  const discordEpoch = 1420070400000;
   const timestampMs = (BigInt(discord_id) >> 22n) + BigInt(discordEpoch);
   const creationDate = new Date(Number(timestampMs));
 
-  // Fetch user data from Discord API
   try {
     const response = await axios.get(`https://discord.com/api/v10/users/${discord_id}`, {
       headers: {
@@ -107,7 +101,6 @@ async function discordAgeChecker(req, res) {
       accuracy_range: 'Exact'
     };
 
-    // Cache results
     try {
       await fs.writeFile(cacheFile, JSON.stringify({ timestamp: Date.now(), data: results }));
     } catch (error) {
