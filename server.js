@@ -1,6 +1,6 @@
 require('dotenv').config();
 const express = require('express');
-const discordBackend = require('.discord-backend');
+const discordBackend = require('./api/discord-backend');
 
 const app = express();
 app.use(express.json());
