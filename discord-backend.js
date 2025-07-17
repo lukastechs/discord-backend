@@ -79,7 +79,7 @@ app.get('/api/discord-age/:userId', async (req, res) => {
             premiumType: user.premiumType || 0,
             verified: !user.bot,
             description: user.bio || null,
-            locale: user.locale || 'Unknown'
+            locale: user.locale || 'Undisclosed'
         };
 
         console.log(`Successfully fetched user data for ID: ${userId}`);
