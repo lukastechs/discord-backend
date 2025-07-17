@@ -20,6 +20,36 @@ client.once('ready', () => {
     console.log('Discord client logged in');
 });
 
+function calculateAccountAge(creationDate) {
+    const now = new Date();
+    const created = new Date(creationDate);
+    let years = now.getFullYear() - created.getFullYear();
+    let months = now.getMonth() - created.getMonth();
+    let days = now.getDate() - created.getDate();
+
+    // Adjust for negative days
+    if (days < 0) {
+        months -= 1;
+        const prevMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+        days += prevMonth.getDate();
+    }
+
+    // Adjust for negative months
+    if (months < 0) {
+        years -= 1;
+        months += 12;
+    }
+
+    // Calculate total days for age_days
+    const diff = now - created;
+    const totalDays = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+    return {
+        accountAge: `${years} years, ${months} months, ${days} days`,
+        age_days: totalDays
+    };
+}
+
 app.get('/api/discord-age/:userId', async (req, res) => {
     const { userId } = req.params;
 
@@ -36,20 +66,14 @@ app.get('/api/discord-age/:userId', async (req, res) => {
         }
 
         const creationDate = user.createdAt.toISOString();
-        const now = new Date();
-        const diff = now - user.createdAt;
-        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-        const years = Math.floor(days / 365);
-        const months = Math.floor((days % 365) / 30);
-        const remainingDays = days % 30;
-        const accountAge = `${years} years, ${months} months, ${remainingDays} days`;
+        const { accountAge, age_days } = calculateAccountAge(user.createdAt);
 
         const response = {
             userId: user.id,
             username: user.username,
             creationDate,
             accountAge,
-            age_days: days,
+            age_days,
             avatar: user.avatarURL() || null,
             publicFlags: user.flags ? user.flags.toArray() : [],
             premiumType: user.premiumType || 0,
@@ -90,20 +114,14 @@ app.get('/api/discord-age-username/:username', async (req, res) => {
         }
 
         const creationDate = foundUser.createdAt.toISOString();
-        const now = new Date();
-        const diff = now - foundUser.createdAt;
-        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-        const years = Math.floor(days / 365);
-        const months = Math.floor((days % 365) / 30);
-        const remainingDays = days % 30;
-        const accountAge = `${years} years, ${months} months, ${remainingDays} days`;
+        const { accountAge, age_days } = calculateAccountAge(foundUser.createdAt);
 
         const response = {
             userId: foundUser.id,
             username: foundUser.username,
             creationDate,
             accountAge,
-            age_days: days,
+            age_days,
             avatar: foundUser.avatarURL() || null,
             publicFlags: foundUser.flags ? foundUser.flags.toArray() : [],
             premiumType: foundUser.premiumType || 0,
