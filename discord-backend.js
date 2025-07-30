@@ -11,7 +11,7 @@ const port = process.env.PORT || 8080;
 // Enable CORS for your cPanel frontend
 app.use(express.json());
 app.use((req, res, next) => {
-    res.setHeader('Access-Control-Allow-Origin', 'https://socialagechecker.com'); // Replace with your cPanel domain
+    res.setHeader('Access-Control-Allow-Origin', 'https://your-cpanel-domain.com'); // Replace with your cPanel domain
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     next();
@@ -172,7 +172,7 @@ app.get('/api/discord-age-username/:username', async (req, res) => {
     }
 });
 
-// Guild ID endpoint using /guilds/{guild.id}/preview
+// Guild ID endpoint with /guilds/{guild.id}/preview
 app.get('/api/discord-age-guild/:guildId', async (req, res) => {
     const { guildId } = req.params;
 
@@ -184,6 +184,10 @@ app.get('/api/discord-age-guild/:guildId', async (req, res) => {
     const maxRetries = 3;
     let attempt = 0;
 
+    // Calculate creation date from Snowflake as a fallback
+    const creationDate = getCreationDate(guildId).toISOString();
+    const { accountAge, age_days } = calculateAccountAge(creationDate);
+
     while (attempt < maxRetries) {
         try {
             const response = await fetch(`https://discord.com/api/v10/guilds/${guildId}/preview`, {
@@ -194,9 +198,20 @@ app.get('/api/discord-age-guild/:guildId', async (req, res) => {
             });
 
             if (!response.ok) {
-                if (response.status === 404) {
+                if (response.status === 404 || response.status === 403) {
                     console.error(`Guild not found or not discoverable for ID: ${guildId}`);
-                    return res.status(404).json({ error: 'Server not found or not publicly discoverable. Try inviting the bot to the server.' });
+                    // Fallback to Snowflake-based response
+                    return res.status(200).json({
+                        guildId,
+                        name: 'Unknown (Server not publicly discoverable)',
+                        creationDate,
+                        accountAge,
+                        age_days,
+                        icon: null,
+                        approximate_member_count: null,
+                        description: 'This server is not publicly discoverable. Invite the bot to get more details: https://discord.com/oauth2/authorize?client_id=YOUR_CLIENT_ID&scope=bot&permissions=0',
+                        region: 'Unknown'
+                    });
                 }
                 if (response.status === 429) {
                     const retryAfter = parseInt(response.headers.get('Retry-After') || '1000', 10);
@@ -209,9 +224,6 @@ app.get('/api/discord-age-guild/:guildId', async (req, res) => {
             }
 
             const guild = await response.json();
-            const creationDate = getCreationDate(guildId).toISOString();
-            const { accountAge, age_days } = calculateAccountAge(creationDate);
-
             const guildResponse = {
                 guildId,
                 name: guild.name || 'Unknown',
@@ -228,12 +240,20 @@ app.get('/api/discord-age-guild/:guildId', async (req, res) => {
             return res.json(guildResponse);
         } catch (error) {
             console.error(`Attempt ${attempt + 1} - Error fetching guild preview for ID ${guildId}:`, error.message);
-            if (error.message.includes('403')) {
-                return res.status(403).json({ error: 'Bot lacks permissions or server is not discoverable. Try inviting the bot to the server.' });
-            }
             attempt++;
             if (attempt === maxRetries) {
-                return res.status(500).json({ error: `Could not fetch server data: ${error.message}` });
+                // Fallback to Snowflake-based response
+                return res.status(200).json({
+                    guildId,
+                    name: 'Unknown (Server not publicly discoverable)',
+                    creationDate,
+                    accountAge,
+                    age_days,
+                    icon: null,
+                    approximate_member_count: null,
+                    description: 'This server is not publicly discoverable. Invite the bot to get more details: https://discord.com/oauth2/authorize?client_id=YOUR_CLIENT_ID&scope=bot&permissions=0',
+                    region: 'Unknown'
+                });
             }
         }
     }
