@@ -1,11 +1,21 @@
 const { Client, GatewayIntentBits } = require('discord.js');
 const express = require('express');
 const dotenv = require('dotenv');
+const fetch = require('node-fetch');
 
 dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 8080;
+
+// Enable CORS for your cPanel frontend
+app.use(express.json());
+app.use((req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', 'https://socialagechecker.com'); // Replace with your cPanel domain
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    next();
+});
 
 const client = new Client({
     intents: [
@@ -14,12 +24,19 @@ const client = new Client({
     ]
 });
 
-app.use(express.json());
-
 client.once('ready', () => {
-    console.log('Discord client logged in');
+    console.log(`Discord client logged in as ${client.user.tag}`);
 });
 
+// Calculate creation date from Snowflake ID
+function getCreationDate(snowflake) {
+    const DISCORD_EPOCH = 1420070400000;
+    const timestamp = (BigInt(snowflake) >> 22n) + BigInt(DISCORD_EPOCH);
+    const date = new Date(Number(timestamp));
+    return date;
+}
+
+// Calculate account age for users and guilds
 function calculateAccountAge(creationDate) {
     const now = new Date();
     const created = new Date(creationDate);
@@ -50,6 +67,22 @@ function calculateAccountAge(creationDate) {
     };
 }
 
+// Root endpoint for Render health checks
+app.get('/', (req, res) => {
+    res.status(200).json({
+        status: 'OK',
+        message: 'Discord Age Checker Backend is running',
+        botReady: client.isReady(),
+        endpoints: [
+            '/api/discord-age/:userId',
+            '/api/discord-age-username/:username',
+            '/api/discord-age-guild/:guildId',
+            '/health'
+        ]
+    });
+});
+
+// User ID endpoint (unchanged)
 app.get('/api/discord-age/:userId', async (req, res) => {
     const { userId } = req.params;
 
@@ -90,6 +123,7 @@ app.get('/api/discord-age/:userId', async (req, res) => {
     }
 });
 
+// Username endpoint (unchanged)
 app.get('/api/discord-age-username/:username', async (req, res) => {
     const { username } = req.params;
 
@@ -136,6 +170,76 @@ app.get('/api/discord-age-username/:username', async (req, res) => {
         console.error(`Error fetching user for username ${username}:`, error.message);
         res.status(500).json({ error: 'Could not fetch user data' });
     }
+});
+
+// Guild ID endpoint using /guilds/{guild.id}/preview
+app.get('/api/discord-age-guild/:guildId', async (req, res) => {
+    const { guildId } = req.params;
+
+    if (!/^\d{17,19}$/.test(guildId)) {
+        console.error(`Invalid guild ID format: ${guildId}`);
+        return res.status(400).json({ error: 'Invalid server ID format. Must be 17-19 digits.' });
+    }
+
+    const maxRetries = 3;
+    let attempt = 0;
+
+    while (attempt < maxRetries) {
+        try {
+            const response = await fetch(`https://discord.com/api/v10/guilds/${guildId}/preview`, {
+                headers: {
+                    'Authorization': `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+                    'User-Agent': 'SocialAgeChecker/1.0'
+                }
+            });
+
+            if (!response.ok) {
+                if (response.status === 404) {
+                    console.error(`Guild not found or not discoverable for ID: ${guildId}`);
+                    return res.status(404).json({ error: 'Server not found or not publicly discoverable. Try inviting the bot to the server.' });
+                }
+                if (response.status === 429) {
+                    const retryAfter = parseInt(response.headers.get('Retry-After') || '1000', 10);
+                    console.log(`Rate limit hit, retrying after ${retryAfter}ms`);
+                    await new Promise(resolve => setTimeout(resolve, retryAfter));
+                    attempt++;
+                    continue;
+                }
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const guild = await response.json();
+            const creationDate = getCreationDate(guildId).toISOString();
+            const { accountAge, age_days } = calculateAccountAge(creationDate);
+
+            const guildResponse = {
+                guildId,
+                name: guild.name || 'Unknown',
+                creationDate,
+                accountAge,
+                age_days,
+                icon: guild.icon ? `https://cdn.discordapp.com/icons/${guildId}/${guild.icon}.png` : null,
+                approximate_member_count: guild.approximate_member_count || null,
+                description: guild.description || null,
+                region: guild.region || 'Unknown'
+            };
+
+            console.log(`Successfully fetched guild preview for ID: ${guildId}`);
+            return res.json(guildResponse);
+        } catch (error) {
+            console.error(`Attempt ${attempt + 1} - Error fetching guild preview for ID ${guildId}:`, error.message);
+            if (error.message.includes('403')) {
+                return res.status(403).json({ error: 'Bot lacks permissions or server is not discoverable. Try inviting the bot to the server.' });
+            }
+            attempt++;
+            if (attempt === maxRetries) {
+                return res.status(500).json({ error: `Could not fetch server data: ${error.message}` });
+            }
+        }
+    }
+
+    console.error(`Failed to fetch guild for ID ${guildId} after ${maxRetries} attempts`);
+    res.status(429).json({ error: 'Rate limit exceeded after multiple attempts. Please try again later.' });
 });
 
 // Health check endpoint
