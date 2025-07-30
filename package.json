@@ -1,16 +1,14 @@
 {
-  "name": "discord-age-checker-backend",
-  "version": "1.0.0",
-  "main": "discord-backend.js",
-  "scripts": {
-    "start": "node discord-backend.js"
-  },
-  "dependencies": {
-    "discord.js": "^14.15.3",
-    "express": "^4.19.2",
-    "dotenv": "^16.4.5"
-  },
-  "engines": {
-    "node": ">=16.6.0"
-  }
+    "name": "discord-backend",
+    "version": "1.0.0",
+    "main": "discord-backend.js",
+    "scripts": {
+        "start": "node discord-backend.js"
+    },
+    "dependencies": {
+        "discord.js": "^14.15.3",
+        "express": "^4.18.2",
+        "dotenv": "^16.0.3",
+        "node-fetch": "^2.6.7"
+    }
 }
