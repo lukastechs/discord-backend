@@ -11,7 +11,7 @@ const port = process.env.PORT || 8080;
 // Enable CORS for your cPanel frontend
 app.use(express.json());
 app.use((req, res, next) => {
-    res.setHeader('Access-Control-Allow-Origin', 'https://your-cpanel-domain.com'); // Replace with your cPanel domain
+    res.setHeader('Access-Control-Allow-Origin', 'https://socialagechecker.com'); // Replace with your cPanel domain
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     next();
