@@ -7,6 +7,15 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 8080;
 
+// Enable CORS for your cPanel frontend
+app.use(express.json());
+app.use((req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', 'https://socialagechecker.com'); // Replace with your cPanel domain
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    next();
+});
+
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -14,12 +23,11 @@ const client = new Client({
     ]
 });
 
-app.use(express.json());
-
 client.once('ready', () => {
-    console.log('Discord client logged in');
+    console.log(`Discord client logged in as ${client.user.tag}`);
 });
 
+// Calculate account age for users and guilds
 function calculateAccountAge(creationDate) {
     const now = new Date();
     const created = new Date(creationDate);
@@ -50,6 +58,22 @@ function calculateAccountAge(creationDate) {
     };
 }
 
+// Root endpoint for Render health checks
+app.get('/', (req, res) => {
+    res.status(200).json({
+        status: 'OK',
+        message: 'Discord Age Checker Backend is running',
+        botReady: client.isReady(),
+        endpoints: [
+            '/api/discord-age/:userId',
+            '/api/discord-age-username/:username',
+            '/api/discord-age-guild/:guildId',
+            '/health'
+        ]
+    });
+});
+
+// User ID endpoint (unchanged)
 app.get('/api/discord-age/:userId', async (req, res) => {
     const { userId } = req.params;
 
@@ -90,6 +114,7 @@ app.get('/api/discord-age/:userId', async (req, res) => {
     }
 });
 
+// Username endpoint (unchanged)
 app.get('/api/discord-age-username/:username', async (req, res) => {
     const { username } = req.params;
 
@@ -138,6 +163,7 @@ app.get('/api/discord-age-username/:username', async (req, res) => {
     }
 });
 
+// Guild ID endpoint
 app.get('/api/discord-age-guild/:guildId', async (req, res) => {
     const { guildId } = req.params;
 
